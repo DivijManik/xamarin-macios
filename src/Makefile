@@ -17,6 +17,7 @@ MAC_BUILD_DIR=$(BUILD_DIR)/mac
 IOS_BUILD_DIR=$(BUILD_DIR)/ios
 WATCH_BUILD_DIR=$(BUILD_DIR)/watch
 TVOS_BUILD_DIR=$(BUILD_DIR)/tvos
+MACCATALYST_BUILD_DIR=$(BUILD_DIR)/maccatalyst
 
 MACOS_DOTNET_BUILD_DIR=$(DOTNET_BUILD_DIR)/macos
 IOS_DOTNET_BUILD_DIR=$(DOTNET_BUILD_DIR)/ios
@@ -1183,6 +1184,184 @@ TVOS_TARGETS += \
 	$(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/mono/Xamarin.TVOS/MonoTouch.Dialog-1.pdb       \
 	$(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/mono/Xamarin.TVOS/MonoTouch.NUnitLite.dll      \
 	$(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/mono/Xamarin.TVOS/MonoTouch.NUnitLite.pdb
+
+#
+# Xamarin.MacCatalyst
+#
+
+# MacCatalyst is a variant of iOS, so it defines the iOS variables as well.
+MACCATALYST_DEFINES = -define:IPHONE -define:IOS -define:MONOTOUCH -d:__IOS__ -d:XAMCORE_3_0 -d:__MACCATALYST__ $(APPLETLS_DEFINES) -d:SYSTEM_NET_HTTP
+MACCATALYST_GENERATOR=$(BUILD_DIR)/common/bgen.exe
+MACCATALYST_GENERATE=$(SYSTEM_MONO) --debug $(MACCATALYST_GENERATOR)
+MACCATALYST_GENERATED_DEFINES= -d:__MACCATALYST__ -d:XAMCORE_3_0 -d:IOS
+
+MACCATALYST_CORE_WARNINGS_TO_FIX=-nowarn:219,618,114,414,1635,3021,$(IOS_WARNINGS_THAT_YOU_SHOULD_FIX)
+MACCATALYST_CORE_DEFINES=$(MACCATALYST_DEFINES) -d:COREBUILD
+MACCATALYST_GENERATOR_DEFINES = $(MACCATALYST_GENERATED_DEFINES)
+MACCATALYST_WARNINGS_TO_FIX=-nowarn:219,618,114,414,1635,3021,$(IOS_WARNINGS_THAT_YOU_SHOULD_FIX)
+
+MACCATALYST_EXTRA_CORE_SOURCES = \
+	$(MACCATALYST_BUILD_DIR)/Constants.cs    \
+    $(MACCATALYST_BUILD_DIR)/AssemblyInfo.cs \
+	$(IOS_OPENTK_1_0_CORE_SOURCES)    \
+	$(SHARED_SYSTEM_DRAWING_SOURCES) \
+
+MACCATALYST_CORE_SOURCES +=           \
+	$(MACCATALYST_EXTRA_CORE_SOURCES) \
+
+MACCATALYST_HTTP_SOURCES = \
+	Foundation/NSUrlSessionHandler.cs \
+	System.Net.Http/CFContentStream.cs \
+	System.Net.Http/CFNetworkHandler.cs \
+	$(SHARED_DESIGNER_CS) \
+
+MACCATALYST_SOURCES +=                \
+	$(MACCATALYST_EXTRA_CORE_SOURCES) \
+	$(MACCATALYST_HTTP_SOURCES)     \
+
+$(MACCATALYST_BUILD_DIR)/Constants.cs: $(TOP)/src/Constants.maccatalyst.cs.in Makefile $(TOP)/Make.config.inc | $(MACCATALYST_BUILD_DIR)
+	$(call Q_PROF_GEN,maccatalyst) sed \
+		-e "s/@VERSION@/$(IOS_PACKAGE_VERSION_MAJOR).$(IOS_PACKAGE_VERSION_MINOR).$(IOS_PACKAGE_VERSION_REV)/g" \
+		-e 's/@REVISION@/$(IOS_COMMIT_DISTANCE) ($(CURRENT_BRANCH_SED_ESCAPED): $(shell git log -1 --pretty=%h)/g' \
+		-e "s/@MACCATALYST_SDK_VERSION@/$(MACCATALYST_SDK_VERSION)/g" \
+		$< > $@
+
+$(MACCATALYST_BUILD_DIR)/AssemblyInfo.cs: $(TOP)/src/AssemblyInfo.cs.in $(TOP)/Make.config  $(TOP)/.git/HEAD | $(MACCATALYST_BUILD_DIR)
+	$(call Q_PROF_GEN,maccatalyst) sed \
+		-e 's|@PRODUCT_NAME@|Xamarin.MacCatalyst|g' \
+		-e 's|@PACKAGE_HEAD_REV@|$(PACKAGE_HEAD_REV)|g' \
+		-e 's|@PACKAGE_HEAD_BRANCH@|$(CURRENT_BRANCH_SED_ESCAPED)|g' \
+		-e 's|@PACKAGE_VERSION_MAJOR@|$(IOS_PACKAGE_VERSION_MAJOR)|g' \
+		-e 's|@PACKAGE_VERSION_MINOR@|$(IOS_PACKAGE_VERSION_MINOR)|g' \
+		-e 's|@PACKAGE_VERSION_REV@|$(IOS_PACKAGE_VERSION_REV)|g' \
+		-e 's|@PACKAGE_VERSION_BUILD@|$(IOS_PACKAGE_VERSION_BUILD)|g' \
+		$< > $@.tmp
+	$(Q) diff $@ $@.tmp >/dev/null 2>&1 || mv -f $@.tmp $@
+	$(Q) rm -f $@.tmp
+	$(Q) touch $@
+
+
+$(MACCATALYST_BUILD_DIR)/maccatalyst/core.dll: $(MACCATALYST_CORE_SOURCES) frameworks.sources Makefile $(BUILD_DIR)/maccatalyst-defines.rsp | $(MACCATALYST_BUILD_DIR)/maccatalyst
+	@mkdir -p $(MACCATALYST_BUILD_DIR)/maccatalyst
+	$(call Q_PROF_CSC,maccatalyst) $(TV_CSC) -nologo -out:$@ -target:library -debug -unsafe \
+		-nowarn:219,618,114,414,1635,3021,$(IOS_WARNINGS_THAT_YOU_SHOULD_FIX) \
+		-define:COREBUILD    \
+		@$(BUILD_DIR)/maccatalyst-defines.rsp \
+		$(MACCATALYST_DEFINES)     \
+		$(MACCATALYST_CORE_DEFINES) \
+		$(MACCATALYST_CORE_SOURCES)
+
+# generated_sources
+$(MACCATALYST_BUILD_DIR)/maccatalyst/generated_sources: $(MACCATALYST_GENERATOR) $(MACCATALYST_APIS) $(MACCATALYST_BUILD_DIR)/maccatalyst/core.dll $(MACCATALYST_BUILD_DIR)/Xamarin.MacCatalyst.BindingAttributes.dll $(BUILD_DIR)/maccatalyst.rsp
+	$(call Q_PROF_GEN,maccatalyst) $(MACCATALYST_GENERATE) @$(BUILD_DIR)/maccatalyst.rsp
+
+$(BUILD_DIR)/maccatalyst.rsp: Makefile Makefile.generator frameworks.sources
+	$(Q_GEN) echo \
+		-inline-selectors                                        \
+		-process-enums                                           \
+		-warnaserror:$(MACCATALYST_GENERATOR_WARNASERROR)               \
+		-core                                                    \
+		-sourceonly=$(MACCATALYST_BUILD_DIR)/maccatalyst/generated_sources     \
+		-compiler=$(MACCATALYST_CSC) \
+		-nologo -nostdlib -noconfig                              \
+		-tmpdir=$(MACCATALYST_BUILD_DIR)/maccatalyst                         \
+		-baselib=$(MACCATALYST_BUILD_DIR)/maccatalyst/core.dll               \
+		-attributelib=$(MACCATALYST_BUILD_DIR)/Xamarin.MacCatalyst.BindingAttributes.dll \
+		$(MACCATALYST_GENERATED_DEFINES)				\
+		-native-exception-marshalling                            \
+		--ns:ObjCRuntime                                         \
+		$(MACCATALYST_APIS)                                            \
+		--target-framework=Xamarin.MacCatalyst,v1.0                     \
+		@$(BUILD_DIR)/maccatalyst-defines.rsp                        \
+		> $@
+
+$(MACCATALYST_BUILD_DIR)/maccatalyst-64/Xamarin.MacCatalyst%dll $(MACCATALYST_BUILD_DIR)/maccatalyst-64/Xamarin.MacCatalyst%pdb: $(MACCATALYST_SOURCES) $(MACCATALYST_BUILD_DIR)/maccatalyst/generated_sources $(PRODUCT_KEY_PATH) | $(MACCATALYST_BUILD_DIR)/maccatalyst-64
+	$(call Q_PROF_CSC,maccatalyst) $(MACCATALYST_CSC) -nologo -out:$(basename $@).dll -target:library -debug -unsafe -optimize \
+		-publicsign -keyfile:$(PRODUCT_KEY_PATH) $(MACCATALYST_DEFINES) \
+		-deterministic \
+		$(ARGS_64) \
+		-nowarn:219,618,114,414,1635,3021,$(IOS_WARNINGS_THAT_YOU_SHOULD_FIX) \
+		@$(BUILD_DIR)/maccatalyst-defines.rsp \
+		$(MACCATALYST_SOURCES) @$(MACCATALYST_BUILD_DIR)/maccatalyst/generated_sources
+
+$(MACCATALYST_BUILD_DIR)/reference/Xamarin.MacCatalyst.dll: $(MACCATALYST_BUILD_DIR)/maccatalyst-64/Xamarin.MacCatalyst.dll | $(MACCATALYST_BUILD_DIR)/reference
+	$(Q_STRIP) mono-cil-strip -q $< $@
+
+$(MACCATALYST_BUILD_DIR)/reference/Xamarin.MacCatalyst.pdb: $(MACCATALYST_BUILD_DIR)/maccatalyst-64/Xamarin.MacCatalyst.pdb | $(MACCATALYST_BUILD_DIR)/reference
+	$(Q) $(CP) $< $@
+
+# MonoTouch.NUnitLite
+$(MACCATALYST_BUILD_DIR)/reference/MonoTouch.NUnitLite%dll $(MACCATALYST_BUILD_DIR)/reference/MonoTouch.NUnitLite%pdb: $(MACCATALYST_TOUCHUNIT_SOURCES) $(PRODUCT_KEY_PATH) $(MACCATALYST_BUILD_DIR)/reference/Xamarin.MacCatalyst.dll $(MACCATALYST_BUILD_DIR)/reference/MonoTouch.Dialog-1.dll
+	$(call Q_PROF_CSC,maccatalyst) $(SYSTEM_CSC) -features:strict -nologo -r:$(MONOTOUCH_TV_MONO_PATH)/mscorlib.dll -out:$(basename $@).dll -target:library -debug:portable -optimize -noconfig -nostdlib -publicsign \
+		-keyfile:$(PRODUCT_KEY_PATH) -r:$(MACCATALYST_BUILD_DIR)/reference/Xamarin.MacCatalyst.dll -r:$(MACCATALYST_BUILD_DIR)/reference/MonoTouch.Dialog-1.dll -r:$(MONOTOUCH_TV_MONO_PATH)/System.dll -r:$(MONOTOUCH_TV_MONO_PATH)/System.Xml.dll \
+		-r:$(MONOTOUCH_TV_MONO_PATH)/System.Core.dll \
+		-nowarn:3006,612,649,414,1635,659 \
+		-define:NUNITLITE,CLR_4_0,NET_4_5,__MOBILE__,MONO $(MACCATALYST_DEFINES) \
+		-define:XAMCORE_2_0,__UNIFIED__ \
+		-deterministic \
+		$(MACCATALYST_TOUCHUNIT_SOURCES)
+
+$(PROJECT_DIR)/xammaccatalyst.csproj: xammaccatalyst.tmpl.csproj Makefile $(wildcard $(TOP)/*.sources)
+	@sed -e 's*<!--%FILES%-->*$(foreach file,$(MACCATALYST_SOURCES),<Compile Include="$(file)"/>)*' -e 's*<!--%APIS%-->*$(foreach file,$(MACCATALYST_APIS),<None Include="$(file)"/>)*' $< | xmllint --format - > $@
+
+$(PROJECT_DIR)/MonoTouch.NUnitLite.maccatalyst.csproj: MonoTouch.NUnitLite.maccatalyst.templ.csproj Makefile touch-unit.sources $(TOP)/Make.config $(TOP)/mk/mono.mk
+	$(Q) sed -e 's*<!--%FILES%-->*$(foreach file,$(MACCATALYST_TOUCHUNIT_SOURCES),<Compile Include="$(file)"/>)*' $< | xmllint --format - > $@
+
+PROJECT_FILES += $(PROJECT_DIR)/xammaccatalyst.csproj $(PROJECT_DIR)/MonoTouch.NUnitLite.maccatalyst.csproj
+
+clean-maccatalyst:
+	$(Q) rm -rf $(MACCATALYST_BUILD_DIR)
+	$(Q) rm -f $(MACCATALYST_TARGETS)
+
+MACCATALYST_TARGETS_DIRS +=                                                 \
+	$(MACCATALYST_BUILD_DIR)                                                \
+	$(MACCATALYST_BUILD_DIR)/maccatalyst                                    \
+	$(MACCATALYST_BUILD_DIR)/maccatalyst-64                                 \
+	$(MACCATALYST_BUILD_DIR)/reference                                      \
+	$(MACCATALYST_BUILD_DIR)/reference/Facades                              \
+	$(MACCATALYST_BUILD_DIR)/NativeTypes                                    \
+	$(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/mono/Xamarin.MacCatalyst          \
+	$(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/mono/Xamarin.MacCatalyst/Facades  \
+	$(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/share/doc/Xamarin.MacCatalyst         \
+	$(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/64bits/MacCatalyst                \
+
+MACCATALYST_TARGETS += \
+	$(PROJECT_DIR)/xammaccatalyst.csproj                                                        \
+	$(PROJECT_DIR)/MonoTouch.NUnitLite.maccatalyst.csproj                                       \
+	$(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/mono/Xamarin.MacCatalyst/Xamarin.MacCatalyst.dll      \
+	$(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/mono/Xamarin.MacCatalyst/Xamarin.MacCatalyst.pdb      \
+	$(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/64bits/MacCatalyst/Xamarin.MacCatalyst.dll            \
+	$(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/64bits/MacCatalyst/Xamarin.MacCatalyst.pdb            \
+
+# reference assemblies, this is just for compilation with XS
+$(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/mono/Xamarin.MacCatalyst/%.dll: $(MACCATALYST_BUILD_DIR)/reference/%.dll | $(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/mono/Xamarin.MacCatalyst $(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/mono/Xamarin.MacCatalyst/Facades
+	$(Q) install -m 0755 $< $@
+
+$(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/mono/Xamarin.MacCatalyst/%.pdb: $(MACCATALYST_BUILD_DIR)/reference/%.pdb | $(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/mono/Xamarin.MacCatalyst
+	$(Q) install -m 0644 $< $@
+
+$(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/mono/Xamarin.MacCatalyst/%.config: $(MACCATALYST_BUILD_DIR)/reference/%.config | $(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/mono/Xamarin.MacCatalyst
+	$(Q) install -m 0644 $< $@
+
+# the actual architecture-specific versions
+$(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/64bits/MacCatalyst/Xamarin.MacCatalyst.dll: $(MACCATALYST_BUILD_DIR)/maccatalyst-64/Xamarin.MacCatalyst.dll | $(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/64bits/MacCatalyst
+	$(Q) install -m 0755 $< $@
+
+$(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/64bits/MacCatalyst/Xamarin.MacCatalyst.pdb: $(MACCATALYST_BUILD_DIR)/maccatalyst-64/Xamarin.MacCatalyst.pdb | $(IOS_DESTDIR)$(MONOTOUCH_PREFIX)/lib/64bits/MacCatalyst
+	$(Q) install -m 0644 $< $@
+
+$(MACCATALYST_TARGETS_DIRS):
+	$(Q) mkdir -p $@
+
+all-maccatalyst: $(MACCATALYST_TARGETS)
+install-maccatalyst: $(MACCATALYST_TARGETS)
+
+ifdef INCLUDE_MACCATALYST
+ALL_TARGETS += all-maccatalyst
+INSTALL_TARGETS += install-maccatalyst
+endif
+
+### .NET ###
 
 DOTNET_TARGETS += \
 	$(TVOS_DOTNET_BUILD_DIR)/64/Xamarin.TVOS.dll \
