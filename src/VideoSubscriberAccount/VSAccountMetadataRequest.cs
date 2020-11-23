@@ -1,3 +1,4 @@
+#if HAS_VIDEOSUBSCRIBERACCOUNT
 using System;
 using System.Threading.Tasks;
 using ObjCRuntime;
@@ -17,4 +18,4 @@ namespace VideoSubscriberAccount {
 		}
 	}
 }
-#endif // !__MACCATALYST__
+#endif // HAS_VIDEOSUBSCRIBERACCOUNT

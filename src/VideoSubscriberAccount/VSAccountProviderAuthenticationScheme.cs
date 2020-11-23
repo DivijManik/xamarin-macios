@@ -1,3 +1,4 @@
+#if HAS_VIDEOSUBSCRIBERACCOUNT
 using System;
 using System.Threading.Tasks;
 using Foundation;
@@ -31,3 +32,4 @@ namespace VideoSubscriberAccount {
 		}
 	}
 }
+#endif // HAS_VIDEOSUBSCRIBERACCOUNT
