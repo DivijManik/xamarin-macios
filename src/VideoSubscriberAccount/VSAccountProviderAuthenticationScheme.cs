@@ -1,4 +1,4 @@
-#if HAS_VIDEOSUBSCRIBERACCOUNT
+#if !__MACCATALYST__
 using System;
 using System.Threading.Tasks;
 using Foundation;
@@ -32,4 +32,4 @@ namespace VideoSubscriberAccount {
 		}
 	}
 }
-#endif // HAS_VIDEOSUBSCRIBERACCOUNT
+#endif // !__MACCATALYST__

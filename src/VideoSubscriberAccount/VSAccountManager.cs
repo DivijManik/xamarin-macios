@@ -7,7 +7,7 @@
 // Copyright 2016 Xamarin Inc. All rights reserved.
 //
 
-#if HAS_VIDEOSUBSCRIBERACCOUNT
+#if !MONOMAC && !__MACCATALYST__
 
 using System;
 using System.Threading.Tasks;
