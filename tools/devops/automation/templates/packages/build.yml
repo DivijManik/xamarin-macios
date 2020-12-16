@@ -7,6 +7,9 @@ parameters:
   type: boolean
   default: true
 
+- name: vsdropsPrefix
+  type: string
+
 steps:
 - checkout: self          # https://docs.microsoft.com/en-us/azure/devops/pipelines/yaml-schema?view=azure-devops&tabs=schema#checkout
   clean: true             # Executes: git clean -ffdx && git reset --hard HEAD
@@ -30,6 +33,7 @@ steps:
   displayName: 'Clean bot'
   env:
     BUILD_REVISION: 'jenkins'
+  continueOnError: true
 
 - bash: |
     security set-key-partition-list -S apple-tool:,apple: -s -k $OSX_KEYCHAIN_PASS login.keychain
@@ -65,28 +69,11 @@ steps:
     provisioning_extra_args: '-vvvv'
   timeoutInMinutes: 250
 
-- task: xamops.azdevex.provisionator-task.provisionator@1
-  displayName: 'Provision .NET Core'
-  inputs:
-    provisioning_script: $(Build.SourcesDirectory)/xamarin-macios/tools/devops/provision-dotnetcore.csx
-    provisioning_extra_args: '-vvvv'
-  timeoutInMinutes: 30
-
-- powershell: |
-    if ([IO.Directory]::Exists('/Developer/MonoTouch')) {
-      Write-Host "Deleting /Developer/MonoTouch"
-      bash -c "sudo rm -Rf /Developer/MonoTouch"
-    }
-
-    if ([IO.Directory]::Exists('/Library/Frameworks/Xamarin.iOS.framework')) {
-      Write-Host "Deleting /Library/Frameworks/Xamarin.iOS.framework"
-      bash -c "sudo rm -Rf /Library/Frameworks/Xamarin.iOS.framework"
-    }
-
-    if ([IO.Directory]::Exists('/Library/Frameworks/Xamarin.Mac.framework')) {
-      Write-Host "Deleting /Library/Frameworks/Xamarin.Mac.framework"
-      bash -c "sudo rm -Rf /Library/Frameworks/Xamarin.Mac.framework"
-    }
+- bash: |
+    set -x
+    sudo rm -Rf /Developer/MonoTouch
+    sudo rm -Rf /Library/Frameworks/Xamarin.iOS.framework
+    sudo rm -Rf /Library/Frameworks/Xamarin.Mac.framework
   displayName: 'Delete library folders'
   timeoutInMinutes: 5
 
@@ -370,18 +357,33 @@ steps:
     rm -Rf *.exe *.pdb *.stamp *.zip *.sh ./references ./temp
   displayName: 'API diff (from stable)'
   condition: and(succeeded(), eq(variables['configuration.SkipPublicJenkins'], 'False'))
+  continueOnError: true
   env:
     BUILD_REVISION: 'jenkins'
+
+- task: ArchiveFiles@1
+  displayName: 'Archive API diff (from stable)'
+  inputs:
+    rootFolder: $(Build.SourcesDirectory)/xamarin-macios/tools/apidiff
+    includeRootFolder: false
+    archiveFile: '$(Build.ArtifactStagingDirectory)/apidiff-stable.zip'
+  condition: and(succeeded(), eq(variables['configuration.SkipPublicJenkins'], 'False'))
+  continueOnError: true
 
 - task: PublishPipelineArtifact@1
   displayName: 'Publish API diff (from stable)'
   inputs:
-    targetPath: $(Build.SourcesDirectory)/xamarin-macios/tools/apidiff
+    targetPath: '$(Build.ArtifactStagingDirectory)/apidiff-stable.zip'
     artifactName: apidiff-stable
   condition: and(succeeded(), eq(variables['configuration.SkipPublicJenkins'], 'False'))
   continueOnError: true
 
 - bash: |
+    set -x
+    set -e
+    echo "Running tests on $AGENT_NAME"
+    echo "##vso[task.setvariable variable=TESTS_BOT;isOutput=true]$AGENT_NAME"
+
     echo "##vso[task.setvariable variable=TESTS_RAN;isOutput=true]True"
     rm -rf ~/.config/.mono/keypairs/
 
@@ -399,6 +401,8 @@ steps:
       cat "$(Build.SourcesDirectory)/xamarin-macios//jenkins/pr-comments.md"
       exit 1
     fi
+    
+    exit $RC
   displayName: 'Run tests'
   name: runTests # not to be confused with the displayName, this is used to later use the name of the step to access the output variables from an other job
   timeoutInMinutes: 600
@@ -407,6 +411,7 @@ steps:
   env:
     BUILD_REVISION: jenkins
     TARGET: 'wrench-jenkins'
+    VSDROPS_URI: '${{ parameters.vsdropsPrefix }}/$(Build.BuildNumber)/$(Build.BuildId);/tests/' # uri used to create the vsdrops index using full uri
 
 # Upload TestSummary as an artifact.
 - task: PublishPipelineArtifact@1
