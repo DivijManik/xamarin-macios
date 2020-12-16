@@ -259,7 +259,7 @@ steps:
   continueOnError: true # should not stop the build since is not official just yet.
   timeoutInMinutes: 180
 
-- bash: $(Build.SourcesDirectory)/xamarin-macios/tools/devops/automation/scripts/bash/publish-to-nuget.sh --apikey="$AZDO_PACKAGE_FEED_TOKEN" --source="$NUGET_SOURCE" $(Build.SourcesDirectory)/package/*.nupkg",
+- bash: $(Build.SourcesDirectory)/xamarin-macios/tools/devops/automation/scripts/bash/publish-to-nuget.sh --apikey="$AZDO_PACKAGE_FEED_TOKEN" --source="$NUGET_SOURCE" $(Build.SourcesDirectory)/package/*.nupkg
   displayName: 'Publish Nugets'
   condition: and(succeeded(), eq(variables['configuration.BuildNugets'], 'True'))
   continueOnError: true # should not stop the build since is not official just yet.
